@@ -1,5 +1,3 @@
-from functions.simclr_utils import contrastive_loss
-
 import os
 from typing import Optional
 
