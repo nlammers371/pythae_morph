@@ -26,6 +26,7 @@ from .factor_vae import FactorVAE, FactorVAEConfig
 from .hvae import HVAE, HVAEConfig
 from .info_vae import INFOVAE_MMD, INFOVAE_MMD_Config
 from .iwae import IWAE, IWAEConfig
+from .metric_vae import MetricVAE, MetricVAEConfig
 from .miwae import MIWAE, MIWAEConfig
 from .msssim_vae import MSSSIM_VAE, MSSSIM_VAEConfig
 from .piwae import PIWAE, PIWAEConfig
@@ -74,6 +75,8 @@ __all__ = [
     "Adversarial_AE_Config",
     "VAEGAN",
     "VAEGANConfig",
+    "MetricVAE",
+    "MetricVAEConfig",
     "MSSSIM_VAE",
     "MSSSIM_VAEConfig",
     "SVAE",
