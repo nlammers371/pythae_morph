@@ -109,6 +109,7 @@ class MetricVAE(BaseAE):
         output = ModelOutput(
             recon_loss=recon_loss,
             reg_loss=kld,
+            contrastive_loss=nt_xent,
             loss=loss,
             recon_x=recon_x_out,
             z=z_out,
