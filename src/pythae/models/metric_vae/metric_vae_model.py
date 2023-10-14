@@ -75,22 +75,43 @@ class MetricVAE(BaseAE):
 
         x = inputs["data"]
 
-        encoder_output = self.encoder(x)
+        # Check input to see if it is 5 dmensional, if so, then the model is being
+        assert (len(x.shape) == 5) and (x.shape[1]==2)\
+            , "Error with data shape. Missing contrastive pairs."
 
-        mu, log_var = encoder_output.embedding, encoder_output.log_covariance
+        x0 = torch.reshape(x[:, 0, :, :, :], (x.shape[0], x.shape[2], x.shape[3], x.shape[4])) # first set of images
+        x1 = torch.reshape(x[:, 1, :, :, :], (x.shape[0], x.shape[2], x.shape[3], x.shape[4])) # second set with matched contrastive pairs
 
-        std = torch.exp(0.5 * log_var)
-        z, eps = self._sample_gauss(mu, std)
-        recon_x = self.decoder(z)["reconstruction"]
+        encoder_output0 = self.encoder(x0)
+        encoder_output1 = self.encoder(x1)
 
-        loss, recon_loss, kld = self.loss_function(recon_x, x, mu, log_var, z)
+        mu0, log_var0 = encoder_output0.embedding, encoder_output0.log_covariance
+        mu1, log_var1 = encoder_output1.embedding, encoder_output1.log_covariance
+
+        std0 = torch.exp(0.5 * log_var0)
+        std1 = torch.exp(0.5 * log_var1)
+
+        z0, eps0 = self._sample_gauss(mu0, std0)
+        recon_x0 = self.decoder(z0)["reconstruction"]
+
+        z1, eps1 = self._sample_gauss(mu1, std1)
+        recon_x1 = self.decoder(z1)["reconstruction"]
+
+        # combine
+        x_out = torch.cat([x0, x1], axis=0)
+        recon_x_out = torch.cat([recon_x0, recon_x1], axis=0)
+        mu_out = torch.cat([mu0, mu1], axis=0)
+        log_var_out = torch.cat([log_var0, log_var1], axis=0)
+        z_out = torch.cat([z0, z1], axis=0)
+
+        loss, recon_loss, kld, nt_xent = self.loss_function(recon_x_out, x_out, mu_out, log_var_out, z_out)
 
         output = ModelOutput(
             recon_loss=recon_loss,
             reg_loss=kld,
             loss=loss,
-            recon_x=recon_x,
-            z=z,
+            recon_x=recon_x_out,
+            z=z_out,
         )
 
         return output
@@ -121,11 +142,11 @@ class MetricVAE(BaseAE):
 
         nt_xent_loss = self.contrastive_loss(features=mu)
 
-        return (recon_loss + KLD + nt_xent_loss).mean(dim=0), recon_loss.mean(dim=0), KLD.mean(dim=0)
+        return (recon_loss + KLD).mean(dim=0) + nt_xent_loss, recon_loss.mean(dim=0), KLD.mean(dim=0), nt_xent_loss
 
     def contrastive_loss(self, features, temperature=1, n_views=2):
 
-        batch_size = features.shape[0]
+        batch_size = int(features.shape[0] / n_views)
 
         labels = torch.cat([torch.arange(batch_size) for i in range(n_views)], dim=0)
         labels = (labels.unsqueeze(0) == labels.unsqueeze(1)).float()
