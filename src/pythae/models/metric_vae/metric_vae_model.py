@@ -46,8 +46,9 @@ class MetricVAE(BaseAE):
 
         self.model_name = "MetricVAE"
         self.latent_dim = model_config.latent_dim
-        self.zn_frac = model_config.zn_frac
-        self.orth_flag = model_config.orth_flag
+        self.zn_frac = model_config.zn_frac # number of nuisance latent dimensions
+        self.gamma = model_config.gamma # weight factor for orth weight
+        self.orth_flag = model_config.orth_flag # indicates whether or not to impose orthogonality constraint
 
         # calculate number of "biological" and "nuisance" latent variables
         self.latent_dim_nuisance = torch.tensor(np.floor(self.latent_dim * self.zn_frac))
@@ -165,10 +166,10 @@ class MetricVAE(BaseAE):
         if weight_matrix != None:
             orth_loss = self.subspace_overlap(U=weight_matrix)
 
-        return (recon_loss + KLD).mean(dim=0) + nt_xent_loss + orth_loss, recon_loss.mean(dim=0), KLD.mean(
+        return torch.mean(recon_loss) + troch.mean(KLD) + nt_xent_loss + self.gamma*orth_loss, recon_loss.mean(dim=0), KLD.mean(
             dim=0), nt_xent_loss, orth_loss
 
-    def subspace_overlap(U):
+    def subspace_overlap(self, U):
         """Compute inner product between subspaces defined by matrix U.
 
         Parameters
@@ -188,7 +189,7 @@ class MetricVAE(BaseAE):
         #     U = torch.cat([A, B, C], dim=0)
         d = U.shape[0]
         eye = torch.eye(d, device=U.device)
-        return torch.mean((torch.matmul(U, torch.transpose(U, 1, 0)) - eye).pow(2))
+        return torch.sum((torch.matmul(U, torch.transpose(U, 1, 0)) - eye).pow(2))
 
     def contrastive_loss(self, features, temperature=1, n_views=2):
 
