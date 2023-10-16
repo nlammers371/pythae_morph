@@ -49,8 +49,8 @@ class MetricVAE(BaseAE):
         # calculate number of "biological" and "nuisance" latent variables
         self.latent_dim_nuisance = torch.tensor(np.floor(self.latent_dim * self.zn_frac))
         self.latent_dim_biological = self.latent_dim - self.latent_dim_nuisance
-        self.nuisance_indices = torch.arange(self.latent_dim_nuisance)
-        self.biological_indices = self.latent_dim - torch.arange(self.latent_dim_biological)
+        self.nuisance_indices = torch.arange(self.latent_dim_nuisance, dtype=torch.int)
+        self.biological_indices = torch.arange(self.latent_dim_nuisance, self.latent_dim, dtype=torch.int)
 
         if encoder is None:
             if model_config.input_dim is None:
@@ -154,6 +154,11 @@ class MetricVAE(BaseAE):
 
     def contrastive_loss(self, features, temperature=1, n_views=2):
 
+        # remove latent dimensions that are intended to capture nuisance variability--these should not factor
+        # into the contrastive loss
+        features = features[:, self.biological_indices]
+
+        # infer batch size
         batch_size = int(features.shape[0] / n_views)
 
         labels = torch.cat([torch.arange(batch_size) for i in range(n_views)], dim=0)
