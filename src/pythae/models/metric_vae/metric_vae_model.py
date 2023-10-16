@@ -166,7 +166,7 @@ class MetricVAE(BaseAE):
         if weight_matrix != None:
             orth_loss = self.subspace_overlap(U=weight_matrix)
 
-        return torch.mean(recon_loss) + troch.mean(KLD) + nt_xent_loss + self.gamma*orth_loss, recon_loss.mean(dim=0), KLD.mean(
+        return torch.mean(recon_loss) + torch.mean(KLD) + nt_xent_loss + self.gamma*orth_loss, recon_loss.mean(dim=0), KLD.mean(
             dim=0), nt_xent_loss, orth_loss
 
     def subspace_overlap(self, U):
