@@ -42,7 +42,15 @@ class MetricVAE(BaseAE):
 
         BaseAE.__init__(self, model_config=model_config, decoder=decoder)
 
-        self.model_name = "VAE"
+        self.model_name = "MetricVAE"
+        self.latent_dim = model_config.latent_dim
+        self.zn_frac = model_config.zn_frac
+
+        # calculate number of "biological" and "nuisance" latent variables
+        self.latent_dim_nuisance = torch.tensor(np.floor(self.latent_dim * self.zn_frac))
+        self.latent_dim_biological = self.latent_dim - self.latent_dim_nuisance
+        self.nuisance_indices = torch.arange(self.latent_dim_nuisance)
+        self.biological_indices = self.latent_dim - torch.arange(self.latent_dim_biological)
 
         if encoder is None:
             if model_config.input_dim is None:
@@ -109,7 +117,6 @@ class MetricVAE(BaseAE):
         output = ModelOutput(
             recon_loss=recon_loss,
             reg_loss=kld,
-            contrastive_loss=nt_xent,
             loss=loss,
             recon_x=recon_x_out,
             z=z_out,

@@ -491,7 +491,7 @@ class BaseTrainer:
                 and epoch % self.training_config.steps_predict == 0
                 and self.is_main_process
             ):
-                true_data, reconstructions, generations = self.predict(best_model)
+                true_data, reconstructions, generations = self.predict(selbest_model)
 
                 self.callback_handler.on_prediction_step(
                     self.training_config,
