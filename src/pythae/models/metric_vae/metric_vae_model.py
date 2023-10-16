@@ -47,7 +47,7 @@ class MetricVAE(BaseAE):
         self.model_name = "MetricVAE"
         self.latent_dim = model_config.latent_dim
         self.zn_frac = model_config.zn_frac # number of nuisance latent dimensions
-        self.gamma = model_config.gamma # weight factor for orth weight
+        # self.gamma = model_config.gamma # weight factor for orth weight
         self.orth_flag = model_config.orth_flag # indicates whether or not to impose orthogonality constraint
 
         # calculate number of "biological" and "nuisance" latent variables
@@ -121,14 +121,14 @@ class MetricVAE(BaseAE):
         log_var_out = torch.cat([log_var0, log_var1], axis=0)
         z_out = torch.cat([z0, z1], axis=0)
 
-        loss, recon_loss, kld, nt_xent, orth_loss = self.loss_function(recon_x_out, x_out, mu_out, log_var_out, z_out,
-                                                                       weight_matrix)
+        loss, recon_loss, kld, nt_xent = self.loss_function(recon_x_out, x_out, mu_out, log_var_out)#, z_out,
+                                                                      # weight_matrix)
 
         output = ModelOutput(
             recon_loss=recon_loss,
             reg_loss=kld,
             ntxent_loss=nt_xent,
-            orth_loss=orth_loss,
+            #orth_loss=orth_loss,
             loss=loss,
             recon_x=recon_x_out,
             z=z_out,
@@ -136,7 +136,7 @@ class MetricVAE(BaseAE):
 
         return output
 
-    def loss_function(self, recon_x, x, mu, log_var, z, weight_matrix):
+    def loss_function(self, recon_x, x, mu, log_var):   #, z, weight_matrix):
 
         # calculate reconstruction error
         if self.model_config.reconstruction_loss == "mse":
@@ -162,12 +162,12 @@ class MetricVAE(BaseAE):
 
         nt_xent_loss = self.contrastive_loss(features=mu)
 
-        orth_loss = 0
-        if weight_matrix != None:
-            orth_loss = self.subspace_overlap(U=weight_matrix)
+        # orth_loss = 0
+        # if weight_matrix != None:
+        #     orth_loss = self.subspace_overlap(U=weight_matrix)
 
-        return torch.mean(recon_loss) + torch.mean(KLD) + nt_xent_loss + self.gamma*orth_loss, recon_loss.mean(dim=0), KLD.mean(
-            dim=0), nt_xent_loss, orth_loss
+        return torch.mean(recon_loss) + torch.mean(KLD) + nt_xent_loss, recon_loss.mean(dim=0), KLD.mean(
+            dim=0), nt_xent_loss#, orth_loss
 
     def subspace_overlap(self, U):
         """Compute inner product between subspaces defined by matrix U.
