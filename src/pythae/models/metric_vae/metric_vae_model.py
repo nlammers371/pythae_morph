@@ -45,6 +45,7 @@ class MetricVAE(BaseAE):
         self.model_name = "MetricVAE"
         self.latent_dim = model_config.latent_dim
         self.zn_frac = model_config.zn_frac
+        self.orth_flag = model_config.orth_flag
 
         # calculate number of "biological" and "nuisance" latent variables
         self.latent_dim_nuisance = torch.tensor(np.floor(self.latent_dim * self.zn_frac))

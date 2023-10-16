@@ -17,5 +17,6 @@ class MetricVAEConfig(VAEConfig):
     """
     temperature: float = 1.0
     zn_frac: float = 0.1
+    orth_flag: bool = False
 
 
