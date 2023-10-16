@@ -11,6 +11,8 @@ from ..base.base_utils import ModelOutput
 from ..nn import BaseDecoder, BaseEncoder
 from ..nn.default_architectures import Encoder_VAE_MLP
 from .metric_vae_config import MetricVAEConfig
+
+
 class MetricVAE(BaseAE):
     """Vanilla Variational Autoencoder model.
 
@@ -34,10 +36,10 @@ class MetricVAE(BaseAE):
     """
 
     def __init__(
-        self,
-        model_config: MetricVAEConfig,
-        encoder: Optional[BaseEncoder] = None,
-        decoder: Optional[BaseDecoder] = None,
+            self,
+            model_config: MetricVAEConfig,
+            encoder: Optional[BaseEncoder] = None,
+            decoder: Optional[BaseDecoder] = None,
     ):
 
         BaseAE.__init__(self, model_config=model_config, decoder=decoder)
@@ -85,17 +87,22 @@ class MetricVAE(BaseAE):
         x = inputs["data"]
 
         # Check input to see if it is 5 dmensional, if so, then the model is being
-        assert (len(x.shape) == 5) and (x.shape[1]==2)\
+        assert (len(x.shape) == 5) and (x.shape[1] == 2) \
             , "Error with data shape. Missing contrastive pairs."
 
-        x0 = torch.reshape(x[:, 0, :, :, :], (x.shape[0], x.shape[2], x.shape[3], x.shape[4])) # first set of images
-        x1 = torch.reshape(x[:, 1, :, :, :], (x.shape[0], x.shape[2], x.shape[3], x.shape[4])) # second set with matched contrastive pairs
+        x0 = torch.reshape(x[:, 0, :, :, :], (x.shape[0], x.shape[2], x.shape[3], x.shape[4]))  # first set of images
+        x1 = torch.reshape(x[:, 1, :, :, :], (
+        x.shape[0], x.shape[2], x.shape[3], x.shape[4]))  # second set with matched contrastive pairs
 
         encoder_output0 = self.encoder(x0)
         encoder_output1 = self.encoder(x1)
 
         mu0, log_var0 = encoder_output0.embedding, encoder_output0.log_covariance
         mu1, log_var1 = encoder_output1.embedding, encoder_output1.log_covariance
+
+        weigth_matrix = None
+        if self.orth_flag:
+            weight_matrix = encoder_output0.weight_matrix
 
         std0 = torch.exp(0.5 * log_var0)
         std1 = torch.exp(0.5 * log_var1)
@@ -113,11 +120,14 @@ class MetricVAE(BaseAE):
         log_var_out = torch.cat([log_var0, log_var1], axis=0)
         z_out = torch.cat([z0, z1], axis=0)
 
-        loss, recon_loss, kld, nt_xent = self.loss_function(recon_x_out, x_out, mu_out, log_var_out, z_out)
+        loss, recon_loss, kld, nt_xent, orth_loss = self.loss_function(recon_x_out, x_out, mu_out, log_var_out, z_out,
+                                                                       weight_matrix)
 
         output = ModelOutput(
             recon_loss=recon_loss,
             reg_loss=kld,
+            ntxent_loss=nt_xent,
+            orth_loss=orth_loss,
             loss=loss,
             recon_x=recon_x_out,
             z=z_out,
@@ -125,17 +135,17 @@ class MetricVAE(BaseAE):
 
         return output
 
-    def loss_function(self, recon_x, x, mu, log_var, z):
+    def loss_function(self, recon_x, x, mu, log_var, z, weight_matrix):
 
         # calculate reconstruction error
         if self.model_config.reconstruction_loss == "mse":
             recon_loss = (
-                0.5
-                * F.mse_loss(
-                    recon_x.reshape(x.shape[0], -1),
-                    x.reshape(x.shape[0], -1),
-                    reduction="none",
-                ).sum(dim=-1)
+                    0.5
+                    * F.mse_loss(
+                recon_x.reshape(x.shape[0], -1),
+                x.reshape(x.shape[0], -1),
+                reduction="none",
+            ).sum(dim=-1)
             )
 
         elif self.model_config.reconstruction_loss == "bce":
@@ -151,7 +161,21 @@ class MetricVAE(BaseAE):
 
         nt_xent_loss = self.contrastive_loss(features=mu)
 
-        return (recon_loss + KLD).mean(dim=0) + nt_xent_loss, recon_loss.mean(dim=0), KLD.mean(dim=0), nt_xent_loss
+        orth_loss = 0
+        if weight_matrix != None:
+            I = torch.eye(weight_matrix.shape[0], dtype=torch.float64).to(self.device)
+            orth_mat = torch.matmul(weight_matrix, weight_matrix.T)
+            orth_loss = (
+                    0.5
+                    * F.mse_loss(
+                orth_mat.reshape(orth_mat.shape[0], -1),
+                I.reshape(orth_mat.shape[0], -1),
+                reduction="none",
+            ).sum()
+            )
+
+        return (recon_loss + KLD).mean(dim=0) + nt_xent_loss + orth_loss, recon_loss.mean(dim=0), KLD.mean(
+            dim=0), nt_xent_loss, orth_loss
 
     def contrastive_loss(self, features, temperature=1, n_views=2):
 
@@ -244,7 +268,7 @@ class MetricVAE(BaseAE):
                 z, _ = self._sample_gauss(mu, std)
 
                 log_q_z_given_x = -0.5 * (
-                    log_var + (z - mu) ** 2 / torch.exp(log_var)
+                        log_var + (z - mu) ** 2 / torch.exp(log_var)
                 ).sum(dim=-1)
                 log_p_z = -0.5 * (z ** 2).sum(dim=-1)
 
