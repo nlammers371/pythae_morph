@@ -163,19 +163,32 @@ class MetricVAE(BaseAE):
 
         orth_loss = 0
         if weight_matrix != None:
-            I = torch.eye(weight_matrix.shape[0], dtype=torch.float64).to(self.device)
-            orth_mat = torch.matmul(weight_matrix, weight_matrix.T)
-            orth_loss = (
-                    0.5
-                    * F.mse_loss(
-                orth_mat.reshape(orth_mat.shape[0], -1),
-                I.reshape(orth_mat.shape[0], -1),
-                reduction="none",
-            ).sum()
-            )
+            orth_loss = self.subspace_overlap(U=weight_matrix)
 
         return (recon_loss + KLD).mean(dim=0) + nt_xent_loss + orth_loss, recon_loss.mean(dim=0), KLD.mean(
             dim=0), nt_xent_loss, orth_loss
+
+    def subspace_overlap(U):
+        """Compute inner product between subspaces defined by matrix U.
+
+        Parameters
+        ----------
+        U : :obj:`torch.Tensor`
+            shape (d, d)
+
+        Returns
+        -------
+        :obj:`torch.Tensor`
+            scalar value; Frobenious norm of UU^T divided by number of entries
+
+        """
+        # if C is None:
+        #     U = torch.cat([A, B], dim=0)
+        # else:
+        #     U = torch.cat([A, B, C], dim=0)
+        d = U.shape[0]
+        eye = torch.eye(d, device=U.device)
+        return torch.mean((torch.matmul(U, torch.transpose(U, 1, 0)) - eye).pow(2))
 
     def contrastive_loss(self, features, temperature=1, n_views=2):
 
