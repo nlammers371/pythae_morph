@@ -3,6 +3,7 @@
 
 from .adversarial_trainer import AdversarialTrainer, AdversarialTrainerConfig
 from .base_trainer import BaseTrainer, BaseTrainerConfig
+from .base_trainer import BaseTrainerVerbose, BaseTrainerVerboseConfig
 from .coupled_optimizer_adversarial_trainer import (
     CoupledOptimizerAdversarialTrainer,
     CoupledOptimizerAdversarialTrainerConfig,
@@ -15,6 +16,8 @@ from .coupled_optimizer_trainer import (
 __all__ = [
     "BaseTrainer",
     "BaseTrainerConfig",
+    "BaseTrainerVerbose",
+    "BaseTrainerVerboseConfig",
     "CoupledOptimizerTrainer",
     "CoupledOptimizerTrainerConfig",
     "AdversarialTrainer",
