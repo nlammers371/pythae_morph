@@ -180,6 +180,11 @@ class AutoConfig(BaseConfig):
 
             model_config = PIWAEConfig.from_json_file(json_path)
 
+        elif config_name == "MetricVAEConfig":
+            from ..metric_vae import MetricVAEConfig
+
+            model_config = MetricVAEConfig.from_json_file(json_path)
+
         else:
             raise NameError(
                 "Cannot reload automatically the model configuration... "
