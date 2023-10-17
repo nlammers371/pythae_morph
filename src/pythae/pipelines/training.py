@@ -101,7 +101,8 @@ class TrainingPipeline(Pipeline):
                     "is expected for training a VAEGAN"
                 )
 
-        if not isinstance(training_config, BaseTrainerConfig):
+        if (not isinstance(training_config, BaseTrainerConfig)) & \
+           (not isinstance(training_config, BaseTrainerVerboseConfig)):
             raise AssertionError(
                 "A 'BaseTrainerConfig' " "is expected for the pipeline"
             )
@@ -243,6 +244,16 @@ class TrainingPipeline(Pipeline):
         elif isinstance(self.training_config, BaseTrainerConfig):
             logger.info("Using Base Trainer\n")
             trainer = BaseTrainer(
+                model=self.model,
+                train_dataset=train_dataloader or train_dataset,
+                eval_dataset=eval_dataloader or eval_dataset,
+                training_config=self.training_config,
+                callbacks=callbacks,
+            )
+
+        elif isinstance(self.training_config, BaseTrainerVerboseConfig):
+            logger.info("Using Base Trainer\n")
+            trainer = BaseTrainerVerbose(
                 model=self.model,
                 train_dataset=train_dataloader or train_dataset,
                 eval_dataset=eval_dataloader or eval_dataset,
