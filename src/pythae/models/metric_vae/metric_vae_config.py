@@ -21,7 +21,7 @@ class MetricVAEConfig(VAEConfig):
     zn_frac: float = 0.1
     orth_flag: bool = False
     n_conv_layers: int = 5  # number of convolutional layers
-    n_channels_out: int = 16 # number of layers to convolutional kernel
+    n_out_channels: int = 16 # number of layers to convolutional kernel
     # gamma: float = 1.0
 
 
