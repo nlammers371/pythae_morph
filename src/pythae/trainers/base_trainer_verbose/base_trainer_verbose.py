@@ -5,6 +5,8 @@ import os
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Union
 
+import pandas as pd
+
 import torch
 import torch.distributed as dist
 import torch.optim as optim
@@ -23,7 +25,7 @@ from ..training_callbacks import (
     ProgressBarCallback,
     TrainingCallback,
 )
-from .base_training_config import BaseTrainerConfig
+from .base_training_verbose_config import BaseTrainerVerboseConfig
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +35,7 @@ logger.addHandler(console)
 logger.setLevel(logging.INFO)
 
 
-class BaseTrainer:
+class BaseTrainerVerbose:
     """Base class to perform model training.
 
     Args:
@@ -58,12 +60,12 @@ class BaseTrainer:
         model: BaseAE,
         train_dataset: Union[BaseDataset, DataLoader],
         eval_dataset: Optional[Union[BaseDataset, DataLoader]] = None,
-        training_config: Optional[BaseTrainerConfig] = None,
+        training_config: Optional[BaseTrainerVerboseConfig] = None,
         callbacks: List[TrainingCallback] = None,
     ):
 
         if training_config is None:
-            training_config = BaseTrainerConfig()
+            training_config = BaseTrainerVerboseConfig()
 
         if training_config.output_dir is None:
             output_dir = "dummy_output_dir"
@@ -75,7 +77,7 @@ class BaseTrainer:
 
         # for distributed training
         self.world_size = self.training_config.world_size
-        self.save_optimizer = self.training_config.save_optimizer
+        self.save_optimizer = self.training_config.save_optimizer # NL: added this
         self.local_rank = self.training_config.local_rank
         self.rank = self.training_config.rank
         self.dist_backend = self.training_config.dist_backend
@@ -459,13 +461,26 @@ class BaseTrainer:
 
             metrics = {}
 
-            epoch_train_loss = self.train_step(epoch)
+            epoch_train_loss, epoch_train_loss_df = self.train_step(epoch)
             metrics["train_epoch_loss"] = epoch_train_loss
 
+            epoch_train_loss_df["train_cat"] = "train"
+            epoch_train_loss_df["batch_size"] = self.training_config.per_device_train_batch_size
+            epoch_train_loss_df["epoch"] = epoch
+            if epoch == 1:
+                loss_tracker_df = epoch_train_loss_df
+            else:
+                loss_tracker_df = pd.concat([loss_tracker_df, epoch_train_loss_df], axis=0, ignore_index=True)
+
             if self.eval_dataset is not None:
-                epoch_eval_loss = self.eval_step(epoch)
+                epoch_eval_loss, epoch_eval_loss_df = self.eval_step(epoch)
                 metrics["eval_epoch_loss"] = epoch_eval_loss
                 self._schedulers_step(epoch_eval_loss)
+
+                epoch_eval_loss_df["train_cat"] = "eval"
+                epoch_eval_loss_df["batch_size"] = self.training_config.per_device_eval_batch_size
+                epoch_eval_loss_df["epoch"] = epoch
+                loss_tracker_df = pd.concat([loss_tracker_df, epoch_eval_loss_df], axis=0, ignore_index=True)
 
             else:
                 epoch_eval_loss = best_eval_loss
@@ -503,6 +518,9 @@ class BaseTrainer:
                 )
 
             self.callback_handler.on_epoch_end(training_config=self.training_config)
+
+            # save updated loss info
+            loss_tracker_df.to_csv(os.path.join(self.training_dir, "loss_tracker.csv"))
 
             # save checkpoints
             if (
@@ -561,6 +579,7 @@ class BaseTrainer:
         epoch_loss = 0
 
         with self.amp_context:
+            input_i = 0
             for inputs in self.eval_loader:
 
                 inputs = self._set_inputs_to_device(inputs)
@@ -587,6 +606,16 @@ class BaseTrainer:
 
                 epoch_loss += loss.item()
 
+                # get list of loss terms
+                out_keys = model_output.keys()
+                loss_keys = sorted([i for i in out_keys if "loss" in i])
+                if input_i == 0:
+                    epoch_loss_vec = torch.asarray([model_output[k].item() for k in loss_keys])
+                else:
+                    epoch_loss_vec += torch.asarray([model_output[k].item() for k in loss_keys])
+
+                input_i += 1
+
                 if epoch_loss != epoch_loss:
                     raise ArithmeticError("NaN detected in eval loss")
 
@@ -594,9 +623,11 @@ class BaseTrainer:
                     training_config=self.training_config
                 )
 
+        epoch_loss_vec /= len(self.eval_loader)
+        epoch_loss_df = pd.DataFrame(torch.reshape(epoch_loss_vec,(1,len(epoch_loss_vec))), columns=list(loss_keys))
         epoch_loss /= len(self.eval_loader)
 
-        return epoch_loss
+        return epoch_loss, epoch_loss_df
 
     def train_step(self, epoch: int):
         """The trainer performs training loop over the train_loader.
@@ -618,7 +649,7 @@ class BaseTrainer:
         self.model.train()
 
         epoch_loss = 0
-
+        input_i = 0
         for inputs in self.train_loader:
 
             inputs = self._set_inputs_to_device(inputs)
@@ -634,11 +665,20 @@ class BaseTrainer:
             self._optimizers_step(model_output)
 
             loss = model_output.loss
-
             epoch_loss += loss.item()
+
+            # get list of loss terms
+            out_keys = model_output.keys()
+            loss_keys = sorted([i for i in out_keys if "loss" in i])
+            if input_i == 0:
+                epoch_loss_vec = torch.asarray([model_output[k].item() for k in loss_keys])
+            else:
+                epoch_loss_vec += torch.asarray([model_output[k].item() for k in loss_keys])
 
             if epoch_loss != epoch_loss:
                 raise ArithmeticError("NaN detected in train loss")
+
+            input_i += 1
 
             self.callback_handler.on_train_step_end(
                 training_config=self.training_config
@@ -650,9 +690,11 @@ class BaseTrainer:
         else:
             self.model.update()
 
+        epoch_loss_vec /= len(self.train_loader)
+        epoch_loss_df = pd.DataFrame(torch.reshape(epoch_loss_vec,(1,len(epoch_loss_vec))), columns=list(loss_keys))
         epoch_loss /= len(self.train_loader)
 
-        return epoch_loss
+        return epoch_loss, epoch_loss_df
 
     def save_model(self, model: BaseAE, dir_path: str):
         """This method saves the final model along with the config files

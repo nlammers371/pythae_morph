@@ -23,7 +23,7 @@ Available models:
     :nosignatures:
 """
 
-from .base_trainer import BaseTrainer
-from .base_training_config import BaseTrainerConfig
+from .base_trainer_verbose import BaseTrainerVerbose
+from .base_training_verbose_config import BaseTrainerVerboseConfig
 
-__all__ = ["BaseTrainer", "BaseTrainerConfig"]
+__all__ = ["BaseTrainerVerbose", "BaseTrainerVerboseConfig"]

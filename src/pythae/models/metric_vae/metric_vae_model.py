@@ -211,6 +211,7 @@ class MetricVAE(BaseAE):
     def contrastive_loss(self, features, n_views=2):
 
         temperature=self.temperature
+        
         # remove latent dimensions that are intended to capture nuisance variability--these should not factor
         # into the contrastive loss
         features = features[:, self.biological_indices]

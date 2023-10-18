@@ -3,7 +3,7 @@
 
 from .adversarial_trainer import AdversarialTrainer, AdversarialTrainerConfig
 from .base_trainer import BaseTrainer, BaseTrainerConfig
-from .base_trainer import BaseTrainerVerbose, BaseTrainerVerboseConfig
+from .base_trainer_verbose import BaseTrainerVerbose, BaseTrainerVerboseConfig
 from .coupled_optimizer_adversarial_trainer import (
     CoupledOptimizerAdversarialTrainer,
     CoupledOptimizerAdversarialTrainerConfig,

@@ -9,7 +9,7 @@ from ...config import BaseConfig
 
 
 @dataclass
-class BaseTrainerConfig(BaseConfig):
+class BaseTrainerVerboseConfig(BaseConfig):
     """
     BaseTrainer config class stating the main training arguments.
 
