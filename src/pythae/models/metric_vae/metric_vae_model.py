@@ -47,6 +47,7 @@ class MetricVAE(BaseAE):
         self.model_name = "MetricVAE"
         self.latent_dim = model_config.latent_dim
         self.zn_frac = model_config.zn_frac # number of nuisance latent dimensions
+        self.temperature = model_config.temperature
         # self.gamma = model_config.gamma # weight factor for orth weight
         self.orth_flag = model_config.orth_flag # indicates whether or not to impose orthogonality constraint
 
@@ -191,8 +192,8 @@ class MetricVAE(BaseAE):
         eye = torch.eye(d, device=U.device)
         return torch.sum((torch.matmul(U, torch.transpose(U, 1, 0)) - eye).pow(2))
 
-    def contrastive_loss(self, features, temperature=1, n_views=2):
-
+    def contrastive_loss(self, features, n_views=2):
+        temperature=self.temperature
         # remove latent dimensions that are intended to capture nuisance variability--these should not factor
         # into the contrastive loss
         features = features[:, self.biological_indices]
