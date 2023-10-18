@@ -47,9 +47,10 @@ class MetricVAE(BaseAE):
         self.model_name = "MetricVAE"
         self.latent_dim = model_config.latent_dim
         self.zn_frac = model_config.zn_frac # number of nuisance latent dimensions
+        self.temperature = model_config.temperature
         # self.gamma = model_config.gamma # weight factor for orth weight
         self.orth_flag = model_config.orth_flag # indicates whether or not to impose orthogonality constraint
-
+        self.contrastive_flag = True
         # calculate number of "biological" and "nuisance" latent variables
         self.latent_dim_nuisance = torch.tensor(np.floor(self.latent_dim * self.zn_frac))
         self.latent_dim_biological = self.latent_dim - self.latent_dim_nuisance
@@ -88,40 +89,54 @@ class MetricVAE(BaseAE):
         x = inputs["data"]
 
         # Check input to see if it is 5 dmensional, if so, then the model is being
-        assert (len(x.shape) == 5) and (x.shape[1] == 2) \
-            , "Error with data shape. Missing contrastive pairs."
+        if (len(x.shape) != 5) or (x.shape[1] != 2):
+            #raise Warning("Model did not receive contrastive pairs. No contrastive loss will be calculated.")
+            self.contrastive_flag = False
 
-        x0 = torch.reshape(x[:, 0, :, :, :], (x.shape[0], x.shape[2], x.shape[3], x.shape[4]))  # first set of images
-        x1 = torch.reshape(x[:, 1, :, :, :], (
-        x.shape[0], x.shape[2], x.shape[3], x.shape[4]))  # second set with matched contrastive pairs
+        if self.contrastive_flag:
+            x0 = torch.reshape(x[:, 0, :, :, :], (x.shape[0], x.shape[2], x.shape[3], x.shape[4]))  # first set of images
+            x1 = torch.reshape(x[:, 1, :, :, :], (
+            x.shape[0], x.shape[2], x.shape[3], x.shape[4]))  # second set with matched contrastive pairs
 
-        encoder_output0 = self.encoder(x0)
-        encoder_output1 = self.encoder(x1)
+            encoder_output0 = self.encoder(x0)
+            encoder_output1 = self.encoder(x1)
 
-        mu0, log_var0 = encoder_output0.embedding, encoder_output0.log_covariance
-        mu1, log_var1 = encoder_output1.embedding, encoder_output1.log_covariance
+            mu0, log_var0 = encoder_output0.embedding, encoder_output0.log_covariance
+            mu1, log_var1 = encoder_output1.embedding, encoder_output1.log_covariance
 
-        weigth_matrix = None
-        if self.orth_flag:
-            weight_matrix = encoder_output0.weight_matrix
+            # weigth_matrix = None
+            # if self.orth_flag:
+            #     weight_matrix = encoder_output0.weight_matrix
 
-        std0 = torch.exp(0.5 * log_var0)
-        std1 = torch.exp(0.5 * log_var1)
+            std0 = torch.exp(0.5 * log_var0)
+            std1 = torch.exp(0.5 * log_var1)
 
-        z0, eps0 = self._sample_gauss(mu0, std0)
-        recon_x0 = self.decoder(z0)["reconstruction"]
+            z0, eps0 = self._sample_gauss(mu0, std0)
+            recon_x0 = self.decoder(z0)["reconstruction"]
 
-        z1, eps1 = self._sample_gauss(mu1, std1)
-        recon_x1 = self.decoder(z1)["reconstruction"]
+            z1, eps1 = self._sample_gauss(mu1, std1)
+            recon_x1 = self.decoder(z1)["reconstruction"]
 
-        # combine
-        x_out = torch.cat([x0, x1], axis=0)
-        recon_x_out = torch.cat([recon_x0, recon_x1], axis=0)
-        mu_out = torch.cat([mu0, mu1], axis=0)
-        log_var_out = torch.cat([log_var0, log_var1], axis=0)
-        z_out = torch.cat([z0, z1], axis=0)
+            # combine
+            x_out = torch.cat([x0, x1], axis=0)
+            recon_x_out = torch.cat([recon_x0, recon_x1], axis=0)
+            mu_out = torch.cat([mu0, mu1], axis=0)
+            log_var_out = torch.cat([log_var0, log_var1], axis=0)
+            z_out = torch.cat([z0, z1], axis=0)
 
-        loss, recon_loss, kld, nt_xent = self.loss_function(recon_x_out, x_out, mu_out, log_var_out)#, z_out,
+            loss, recon_loss, kld, nt_xent = self.loss_function(recon_x_out, x_out, mu_out, log_var_out)
+
+        else:
+            encoder_output = self.encoder(x)
+
+            mu, log_var = encoder_output.embedding, encoder_output.log_covariance
+
+            std = torch.exp(0.5 * log_var)
+
+            z_out, eps = self._sample_gauss(mu, std)
+            recon_x_out = self.decoder(z_out)["reconstruction"]
+
+            loss, recon_loss, kld, nt_xent = self.loss_function(recon_x_out, x, mu, log_var)#, z_out,
                                                                       # weight_matrix)
 
         output = ModelOutput(
@@ -160,8 +175,10 @@ class MetricVAE(BaseAE):
         # Calculate cross-entropy wrpt a standard multivariate Gaussian
         KLD = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp(), dim=-1)
 
-        nt_xent_loss = self.contrastive_loss(features=mu)
-
+        if self.contrastive_flag:
+            nt_xent_loss = self.contrastive_loss(features=mu)
+        else:
+            nt_xent_loss = 0
         # orth_loss = 0
         # if weight_matrix != None:
         #     orth_loss = self.subspace_overlap(U=weight_matrix)
@@ -191,8 +208,9 @@ class MetricVAE(BaseAE):
         eye = torch.eye(d, device=U.device)
         return torch.sum((torch.matmul(U, torch.transpose(U, 1, 0)) - eye).pow(2))
 
-    def contrastive_loss(self, features, temperature=1, n_views=2):
+    def contrastive_loss(self, features, n_views=2):
 
+        temperature=self.temperature
         # remove latent dimensions that are intended to capture nuisance variability--these should not factor
         # into the contrastive loss
         features = features[:, self.biological_indices]

@@ -20,6 +20,8 @@ class MetricVAEConfig(VAEConfig):
     temperature: float = 1.0
     zn_frac: float = 0.1
     orth_flag: bool = False
+    depth: int = 5  # number of convolutional layers
+    n_channels_out: int = 16 # number of layers to convolutional kernel
     # gamma: float = 1.0
 
 
