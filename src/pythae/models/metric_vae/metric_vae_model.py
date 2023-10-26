@@ -48,6 +48,7 @@ class MetricVAE(BaseAE):
         self.latent_dim = model_config.latent_dim
         self.zn_frac = model_config.zn_frac # number of nuisance latent dimensions
         self.temperature = model_config.temperature
+        self.distance_metric = model_config.distance_metric
         # self.gamma = model_config.gamma # weight factor for orth weight
         self.orth_flag = model_config.orth_flag # indicates whether or not to impose orthogonality constraint
         self.contrastive_flag = True
@@ -176,7 +177,13 @@ class MetricVAE(BaseAE):
         KLD = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp(), dim=-1)
 
         if self.contrastive_flag:
-            nt_xent_loss = self.contrastive_loss(features=mu)
+
+            if self.distance_metric == "cosine":
+                nt_xent_loss = self.nt_xent_loss(features=mu)
+            elif self.distance_metric == "euclidean":
+                nt_xent_loss = self.nt_xent_loss_euclidean(features=mu)
+            else:
+                raise Exception("Invalid distance metric was passed to model.")
         else:
             nt_xent_loss = 0
         # orth_loss = 0
@@ -186,29 +193,29 @@ class MetricVAE(BaseAE):
         return torch.mean(recon_loss) + torch.mean(KLD) + nt_xent_loss, recon_loss.mean(dim=0), KLD.mean(
             dim=0), nt_xent_loss#, orth_loss
 
-    def subspace_overlap(self, U):
-        """Compute inner product between subspaces defined by matrix U.
+    # def subspace_overlap(self, U):
+    #     """Compute inner product between subspaces defined by matrix U.
+    #
+    #     Parameters
+    #     ----------
+    #     U : :obj:`torch.Tensor`
+    #         shape (d, d)
+    #
+    #     Returns
+    #     -------
+    #     :obj:`torch.Tensor`
+    #         scalar value; Frobenious norm of UU^T divided by number of entries
+    #
+    #     """
+    #     # if C is None:
+    #     #     U = torch.cat([A, B], dim=0)
+    #     # else:
+    #     #     U = torch.cat([A, B, C], dim=0)
+    #     d = U.shape[0]
+    #     eye = torch.eye(d, device=U.device)
+    #     return torch.sum((torch.matmul(U, torch.transpose(U, 1, 0)) - eye).pow(2))
 
-        Parameters
-        ----------
-        U : :obj:`torch.Tensor`
-            shape (d, d)
-
-        Returns
-        -------
-        :obj:`torch.Tensor`
-            scalar value; Frobenious norm of UU^T divided by number of entries
-
-        """
-        # if C is None:
-        #     U = torch.cat([A, B], dim=0)
-        # else:
-        #     U = torch.cat([A, B, C], dim=0)
-        d = U.shape[0]
-        eye = torch.eye(d, device=U.device)
-        return torch.sum((torch.matmul(U, torch.transpose(U, 1, 0)) - eye).pow(2))
-
-    def contrastive_loss(self, features, n_views=2):
+    def nt_xent_loss(self, features, n_views=2):
 
         temperature=self.temperature
 
@@ -223,11 +230,13 @@ class MetricVAE(BaseAE):
         labels = (labels.unsqueeze(0) == labels.unsqueeze(1)).float()
         labels = labels.to(self.device)
 
+
+        # COS approach
         # Normalize each latent vector. This simplifies the process of calculating cosie differences
-        features = F.normalize(features, dim=1)
+        features_norm = F.normalize(features, dim=1)
 
         # Due to above normalization, sim matrix entries are same as cosine differences
-        similarity_matrix = torch.matmul(features, features.T)
+        similarity_matrix = torch.matmul(features_norm, features_norm.T)
         # assert similarity_matrix.shape == (
         #     n_views * batch_size, n_views * batch_size)
         # assert similarity_matrix.shape == labels.shape
@@ -259,6 +268,44 @@ class MetricVAE(BaseAE):
         loss = loss_fun(logits, labels)
 
         return loss
+
+    def nt_xent_loss_euclidean(self, features, n_views=2):
+
+        temperature = self.temperature
+
+        # infer batch size
+        batch_size = int(features.shape[0] / n_views)
+
+        # EUCLIDEAN
+        labels = torch.cat([torch.arange(batch_size) for i in range(n_views)], dim=0)
+        labels = (labels.unsqueeze(0) == labels.unsqueeze(1)).float()
+        labels = labels.to(self.device)
+
+        dist_matrix = torch.cdist(features, features, p=2)
+        mask = torch.eye(labels.shape[0], dtype=torch.bool).to(self.device)
+        labels = labels[~mask].view(labels.shape[0], -1)
+        dist_matrix = dist_matrix[~mask].view(dist_matrix.shape[0], -1).pow(2)
+
+        # select and combine multiple positives
+        positives_euc = dist_matrix[labels.bool()].view(labels.shape[0], -1)
+
+        # select only the negatives the negatives
+        negatives_euc = dist_matrix[~labels.bool()].view(dist_matrix.shape[0], -1)
+
+        # Construct logits matrix with positive examples as firs column
+        distances_euc = torch.cat([positives_euc, negatives_euc], dim=1)
+
+        # These labels tell the cross-entropy function that the positive example for each row is in the first column (col=0)
+        labels = torch.zeros(distances_euc.shape[0], dtype=torch.long).to(self.device)
+
+        # Apply temperature parameter
+        distances_euc = -distances_euc / temperature
+
+        # initialize cross entropy loss
+        loss_fun = torch.nn.CrossEntropyLoss()
+        loss_euc = loss_fun(distances_euc, labels)
+
+        return loss_euc
 
     def _sample_gauss(self, mu, std):
         # Reparametrization trick
