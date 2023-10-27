@@ -230,7 +230,6 @@ class MetricVAE(BaseAE):
         labels = (labels.unsqueeze(0) == labels.unsqueeze(1)).float()
         labels = labels.to(self.device)
 
-
         # COS approach
         # Normalize each latent vector. This simplifies the process of calculating cosie differences
         features_norm = F.normalize(features, dim=1)
@@ -272,6 +271,10 @@ class MetricVAE(BaseAE):
     def nt_xent_loss_euclidean(self, features, n_views=2):
 
         temperature = self.temperature
+
+        # remove latent dimensions that are intended to capture nuisance variability--these should not factor
+        # into the contrastive loss
+        features = features[:, self.biological_indices]
 
         # infer batch size
         batch_size = int(features.shape[0] / n_views)
