@@ -1,6 +1,6 @@
 import os
 from typing import Optional
-
+import ntpath
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -92,6 +92,9 @@ class MetricVAE(BaseAE):
         """
 
         x = inputs["data"]
+        y = None
+        if "label" in inputs:
+            y = list(inputs["label"][0])
 
         # Check input to see if it is 5 dmensional, if so, then the model is being
         if (len(x.shape) != 5) or (x.shape[1] != 2):
@@ -129,9 +132,11 @@ class MetricVAE(BaseAE):
             mu_out = torch.cat([mu0, mu1], axis=0)
             log_var_out = torch.cat([log_var0, log_var1], axis=0)
             z_out = torch.cat([z0, z1], axis=0)
+            if y is not None:
+                y = y * 2
 
             loss, recon_loss, kld, nt_xent, nt_xent_nuisance = self.loss_function(recon_x_out, x_out, mu_out,
-                                                                                  log_var_out)
+                                                                                  log_var_out, labels=y)
 
         else:
             encoder_output = self.encoder(x)
@@ -143,8 +148,8 @@ class MetricVAE(BaseAE):
             z_out, eps = self._sample_gauss(mu, std)
             recon_x_out = self.decoder(z_out)["reconstruction"]
 
-            loss, recon_loss, kld, nt_xent, nt_xent_nuisance = self.loss_function(recon_x_out, x, mu,
-                                                                                  log_var)  # , z_out,
+            loss, recon_loss, kld, nt_xent, nt_xent_nuisance = self.loss_function(recon_x_out, x, mu, log_var,
+                                                                                  labels=y)  # , z_out,
             # weight_matrix)
 
         output = ModelOutput(
@@ -159,7 +164,10 @@ class MetricVAE(BaseAE):
 
         return output
 
-    def loss_function(self, recon_x, x, mu, log_var):  # , z, weight_matrix):
+    def loss_function(self, recon_x, x, mu, log_var, labels=None):  # , z, weight_matrix):
+
+        if labels is not None:
+            labels = self.clean_path_names(labels)
 
         # calculate reconstruction error
         if self.model_config.reconstruction_loss == "mse":
@@ -350,6 +358,14 @@ class MetricVAE(BaseAE):
         # Sample N(0, I)
         eps = torch.randn_like(std)
         return mu + eps * std, eps
+
+    def clean_path_names(self, path_list):
+        path_list_out = []
+        for path in path_list:
+            head, tail = ntpath.split(path)
+            path_list_out.append(tail[:-4])
+
+        return path_list_out
 
     def get_nll(self, data, n_samples=1, batch_size=100):
         """
