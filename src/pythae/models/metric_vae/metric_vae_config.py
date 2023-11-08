@@ -24,7 +24,8 @@ class MetricVAEConfig(VAEConfig):
     n_out_channels: int = 16 # number of layers to convolutional kernel
     distance_metric: str = "cosine"
     class_key: float = None
-    class_ignorance_flag: bool = False # if true, we squeeze class info out of the nuisance partition
+    class_ignorance_flag: bool = False  # if true, we squeeze class info out of the nuisance partition
+    time_similarity_threshold: float = 1.5  # specifies how close in age different observations need to be to be counted as positive pairs
     # gamma: float = 1.0
 
 

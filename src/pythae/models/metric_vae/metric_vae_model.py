@@ -60,6 +60,7 @@ class MetricVAE(BaseAE):
 
         self.class_key = model_config.class_key
         self.class_ignorance_flag = model_config.class_ignorance_flag
+        self.time_similarity_threshold = model_config.time_similarity_threshold
 
         if encoder is None:
             if model_config.input_dim is None:
@@ -191,7 +192,7 @@ class MetricVAE(BaseAE):
             nt_xent_loss = 0
 
         if self.class_ignorance_flag:
-            nt_bxent_loss = self.nt_bxent_loss(features=mu)
+            ntx_knowledge_loss = self.calculate_knowledge_loss(features=mu)
 
         # orth_loss = 0
         # if weight_matrix != None:
@@ -295,36 +296,29 @@ class MetricVAE(BaseAE):
 
         return loss_euc
 
-    def nt_bxent_loss(self, features, n_views=2):
-        # use multiclass comparisons of latent encoding to prevent like-perturbations and times from clustering together
-        class_key = self.class_key
-        if class_key is None:
-            raise Exception("Class constraint was specified, but no class key was provided.")
+    def calculate_knowledge_loss(self, features, n_views=2, dt_thresh=1.5):
+
+        if self.class_key is None:
+            raise Exception("Nuisance metric learning requested, but not class information was passed to model.")
+        else:
+            class_key = self.class_key
+
+        if self.time_similarity_threshold is not None:
+            dt_thresh = self.time_similarity_threshold
+            assert dt_thresh >= 0
+
+        # calculate euclidean distances
+        dist_matrix = torch.cdist(features, features, p=2)
+
+        # use class info to build target matrix
+
+    def nt_xent_loss_multiclass(self, logits, target, repel_flag=False):
+        # a multiclass version of the NT-Xent loss function
+        logit_sign = -1
+        if repel_flag:
+            logit_sign = 1
 
         temperature = self.temperature
-
-        # remove latent dimensions that are intended to capture nuisance variability--these should not factor
-        # into the contrastive loss
-        features = features[:, self.biological_indices]
-
-        # infer batch size
-        batch_size = int(features.shape[0] / n_views)
-
-        # EUCLIDEAN
-        labels = torch.cat([torch.arange(batch_size) for i in range(n_views)], dim=0)
-        labels = (labels.unsqueeze(0) == labels.unsqueeze(1)).float()
-        labels = labels.to(self.device)
-
-        dist_matrix = torch.cdist(features, features, p=2)
-        mask = torch.eye(labels.shape[0], dtype=torch.bool).to(self.device)
-        labels = labels[~mask].view(labels.shape[0], -1)
-        dist_matrix = dist_matrix[~mask].view(dist_matrix.shape[0], -1).pow(2)
-
-        # select and combine multiple positives
-        positives_euc = dist_matrix[labels.bool()].view(labels.shape[0], -1)
-
-        # select only the negatives the negatives
-        negatives_euc = dist_matrix[~labels.bool()].view(dist_matrix.shape[0], -1)
 
         # Construct logits matrix with positive examples as firs column
         distances_euc = torch.cat([positives_euc, negatives_euc], dim=1)
@@ -333,13 +327,17 @@ class MetricVAE(BaseAE):
         labels = torch.zeros(distances_euc.shape[0], dtype=torch.long).to(self.device)
 
         # Apply temperature parameter
-        distances_euc = -distances_euc / temperature
+        logits_tempered = logit_sign * logits/temperature
+        logits_tempered[target == -1] = -torch.inf
+        logits_num = logits_tempered.clone()
+        logits_num[target == 0] = -torch.inf
 
-        # initialize cross entropy loss
-        loss_fun = torch.nn.CrossEntropyLoss()
-        loss_euc = loss_fun(distances_euc, labels)
+        # calculate loss for each entry in the batch
+        numerator = -torch.logsumexp(logits_num, axis=1)
+        denominator = torch.logsumexp(logits_tempered, axis=1)
+        loss = numerator + denominator
 
-        return loss_euc
+        return torch.mean(loss)
 
     def _sample_gauss(self, mu, std):
         # Reparametrization trick
