@@ -203,7 +203,7 @@ class MetricVAE(BaseAE):
             nt_xent_loss = 0
 
         if self.class_ignorance_flag:
-            ntx_knowledge_loss = self.calculate_knowledge_loss(features=mu)
+            ntx_knowledge_loss = self.calculate_knowledge_loss(features=mu, labels=labels)
         else:
             ntx_knowledge_loss = 0
 
@@ -310,7 +310,7 @@ class MetricVAE(BaseAE):
 
         return loss_euc
 
-    def calculate_knowledge_loss(self, features, n_views=2, dt_thresh=1.5):
+    def calculate_knowledge_loss(self, features, labels, n_views=2, dt_thresh=1.5):
 
         if self.class_key is None:
             raise Exception("Nuisance metric learning requested, but not class information was passed to model.")
