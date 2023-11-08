@@ -46,11 +46,11 @@ class MetricVAE(BaseAE):
 
         self.model_name = "MetricVAE"
         self.latent_dim = model_config.latent_dim
-        self.zn_frac = model_config.zn_frac # number of nuisance latent dimensions
+        self.zn_frac = model_config.zn_frac  # number of nuisance latent dimensions
         self.temperature = model_config.temperature
         self.distance_metric = model_config.distance_metric
         # self.gamma = model_config.gamma # weight factor for orth weight
-        self.orth_flag = model_config.orth_flag # indicates whether or not to impose orthogonality constraint
+        self.orth_flag = model_config.orth_flag  # indicates whether or not to impose orthogonality constraint
         self.contrastive_flag = True
         # calculate number of "biological" and "nuisance" latent variables
         self.latent_dim_nuisance = torch.tensor(np.floor(self.latent_dim * self.zn_frac))
@@ -95,13 +95,14 @@ class MetricVAE(BaseAE):
 
         # Check input to see if it is 5 dmensional, if so, then the model is being
         if (len(x.shape) != 5) or (x.shape[1] != 2):
-            #raise Warning("Model did not receive contrastive pairs. No contrastive loss will be calculated.")
+            # raise Warning("Model did not receive contrastive pairs. No contrastive loss will be calculated.")
             self.contrastive_flag = False
 
         if self.contrastive_flag:
-            x0 = torch.reshape(x[:, 0, :, :, :], (x.shape[0], x.shape[2], x.shape[3], x.shape[4]))  # first set of images
+            x0 = torch.reshape(x[:, 0, :, :, :],
+                               (x.shape[0], x.shape[2], x.shape[3], x.shape[4]))  # first set of images
             x1 = torch.reshape(x[:, 1, :, :, :], (
-            x.shape[0], x.shape[2], x.shape[3], x.shape[4]))  # second set with matched contrastive pairs
+                x.shape[0], x.shape[2], x.shape[3], x.shape[4]))  # second set with matched contrastive pairs
 
             encoder_output0 = self.encoder(x0)
             encoder_output1 = self.encoder(x1)
@@ -129,7 +130,8 @@ class MetricVAE(BaseAE):
             log_var_out = torch.cat([log_var0, log_var1], axis=0)
             z_out = torch.cat([z0, z1], axis=0)
 
-            loss, recon_loss, kld, nt_xent = self.loss_function(recon_x_out, x_out, mu_out, log_var_out)
+            loss, recon_loss, kld, nt_xent, nt_xent_nuisance = self.loss_function(recon_x_out, x_out, mu_out,
+                                                                                  log_var_out)
 
         else:
             encoder_output = self.encoder(x)
@@ -141,14 +143,15 @@ class MetricVAE(BaseAE):
             z_out, eps = self._sample_gauss(mu, std)
             recon_x_out = self.decoder(z_out)["reconstruction"]
 
-            loss, recon_loss, kld, nt_xent = self.loss_function(recon_x_out, x, mu, log_var)#, z_out,
-                                                                      # weight_matrix)
+            loss, recon_loss, kld, nt_xent, nt_xent_nuisance = self.loss_function(recon_x_out, x, mu,
+                                                                                  log_var)  # , z_out,
+            # weight_matrix)
 
         output = ModelOutput(
             recon_loss=recon_loss,
             reg_loss=kld,
             ntxent_loss=nt_xent,
-            #orth_loss=orth_loss,
+            # orth_loss=orth_loss,
             loss=loss,
             recon_x=recon_x_out,
             z=z_out,
@@ -156,7 +159,7 @@ class MetricVAE(BaseAE):
 
         return output
 
-    def loss_function(self, recon_x, x, mu, log_var):   #, z, weight_matrix):
+    def loss_function(self, recon_x, x, mu, log_var):  # , z, weight_matrix):
 
         # calculate reconstruction error
         if self.model_config.reconstruction_loss == "mse":
@@ -193,17 +196,20 @@ class MetricVAE(BaseAE):
 
         if self.class_ignorance_flag:
             ntx_knowledge_loss = self.calculate_knowledge_loss(features=mu)
+        else:
+            ntx_knowledge_loss = 0
 
         # orth_loss = 0
         # if weight_matrix != None:
         #     orth_loss = self.subspace_overlap(U=weight_matrix)
 
-        return torch.mean(recon_loss) + torch.mean(KLD) + nt_xent_loss + nt_bxent_loss, recon_loss.mean(dim=0), KLD.mean(
-            dim=0), nt_xent_loss, nt_bxent_loss#, orth_loss
+        return torch.mean(recon_loss) + torch.mean(KLD) + nt_xent_loss + ntx_knowledge_loss, recon_loss.mean(
+            dim=0), KLD.mean(
+            dim=0), nt_xent_loss, ntx_knowledge_loss  # , orth_loss
 
     def nt_xent_loss(self, features, n_views=2):
 
-        temperature=self.temperature
+        temperature = self.temperature
 
         # remove latent dimensions that are intended to capture nuisance variability--these should not factor
         # into the contrastive loss
@@ -327,7 +333,7 @@ class MetricVAE(BaseAE):
         labels = torch.zeros(distances_euc.shape[0], dtype=torch.long).to(self.device)
 
         # Apply temperature parameter
-        logits_tempered = logit_sign * logits/temperature
+        logits_tempered = logit_sign * logits / temperature
         logits_tempered[target == -1] = -torch.inf
         logits_num = logits_tempered.clone()
         logits_num[target == 0] = -torch.inf
