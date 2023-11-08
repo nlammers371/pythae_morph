@@ -58,6 +58,9 @@ class MetricVAE(BaseAE):
         self.nuisance_indices = torch.arange(self.latent_dim_nuisance, dtype=torch.int)
         self.biological_indices = torch.arange(self.latent_dim_nuisance, self.latent_dim, dtype=torch.int)
 
+        self.class_key = model_config.class_key
+        self.class_ignorance_flag = model_config.class_ignorance_flag
+
         if encoder is None:
             if model_config.input_dim is None:
                 raise AttributeError(
@@ -186,34 +189,16 @@ class MetricVAE(BaseAE):
                 raise Exception("Invalid distance metric was passed to model.")
         else:
             nt_xent_loss = 0
+
+        if self.class_ignorance_flag:
+            nt_bxent_loss = self.nt_bxent_loss(features=mu)
+
         # orth_loss = 0
         # if weight_matrix != None:
         #     orth_loss = self.subspace_overlap(U=weight_matrix)
 
-        return torch.mean(recon_loss) + torch.mean(KLD) + nt_xent_loss, recon_loss.mean(dim=0), KLD.mean(
-            dim=0), nt_xent_loss#, orth_loss
-
-    # def subspace_overlap(self, U):
-    #     """Compute inner product between subspaces defined by matrix U.
-    #
-    #     Parameters
-    #     ----------
-    #     U : :obj:`torch.Tensor`
-    #         shape (d, d)
-    #
-    #     Returns
-    #     -------
-    #     :obj:`torch.Tensor`
-    #         scalar value; Frobenious norm of UU^T divided by number of entries
-    #
-    #     """
-    #     # if C is None:
-    #     #     U = torch.cat([A, B], dim=0)
-    #     # else:
-    #     #     U = torch.cat([A, B, C], dim=0)
-    #     d = U.shape[0]
-    #     eye = torch.eye(d, device=U.device)
-    #     return torch.sum((torch.matmul(U, torch.transpose(U, 1, 0)) - eye).pow(2))
+        return torch.mean(recon_loss) + torch.mean(KLD) + nt_xent_loss + nt_bxent_loss, recon_loss.mean(dim=0), KLD.mean(
+            dim=0), nt_xent_loss, nt_bxent_loss#, orth_loss
 
     def nt_xent_loss(self, features, n_views=2):
 
@@ -269,6 +254,52 @@ class MetricVAE(BaseAE):
         return loss
 
     def nt_xent_loss_euclidean(self, features, n_views=2):
+
+        temperature = self.temperature
+
+        # remove latent dimensions that are intended to capture nuisance variability--these should not factor
+        # into the contrastive loss
+        features = features[:, self.biological_indices]
+
+        # infer batch size
+        batch_size = int(features.shape[0] / n_views)
+
+        # EUCLIDEAN
+        labels = torch.cat([torch.arange(batch_size) for i in range(n_views)], dim=0)
+        labels = (labels.unsqueeze(0) == labels.unsqueeze(1)).float()
+        labels = labels.to(self.device)
+
+        dist_matrix = torch.cdist(features, features, p=2)
+        mask = torch.eye(labels.shape[0], dtype=torch.bool).to(self.device)
+        labels = labels[~mask].view(labels.shape[0], -1)
+        dist_matrix = dist_matrix[~mask].view(dist_matrix.shape[0], -1).pow(2)
+
+        # select and combine multiple positives
+        positives_euc = dist_matrix[labels.bool()].view(labels.shape[0], -1)
+
+        # select only the negatives the negatives
+        negatives_euc = dist_matrix[~labels.bool()].view(dist_matrix.shape[0], -1)
+
+        # Construct logits matrix with positive examples as firs column
+        distances_euc = torch.cat([positives_euc, negatives_euc], dim=1)
+
+        # These labels tell the cross-entropy function that the positive example for each row is in the first column (col=0)
+        labels = torch.zeros(distances_euc.shape[0], dtype=torch.long).to(self.device)
+
+        # Apply temperature parameter
+        distances_euc = -distances_euc / temperature
+
+        # initialize cross entropy loss
+        loss_fun = torch.nn.CrossEntropyLoss()
+        loss_euc = loss_fun(distances_euc, labels)
+
+        return loss_euc
+
+    def nt_bxent_loss(self, features, n_views=2):
+        # use multiclass comparisons of latent encoding to prevent like-perturbations and times from clustering together
+        class_key = self.class_key
+        if class_key is None:
+            raise Exception("Class constraint was specified, but no class key was provided.")
 
         temperature = self.temperature
 

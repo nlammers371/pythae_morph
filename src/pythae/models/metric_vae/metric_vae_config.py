@@ -23,6 +23,8 @@ class MetricVAEConfig(VAEConfig):
     n_conv_layers: int = 5  # number of convolutional layers
     n_out_channels: int = 16 # number of layers to convolutional kernel
     distance_metric: str = "cosine"
+    class_key: float = None
+    class_ignorance_flag: bool = False # if true, we squeeze class info out of the nuisance partition
     # gamma: float = 1.0
 
 
