@@ -60,6 +60,7 @@ class MetricVAE(BaseAE):
 
         self.class_key = pd.read_csv(model_config.class_key_path, index_col=0)
         self.class_ignorance_flag = model_config.class_ignorance_flag
+        self.time_ignorance_flag = model_config.time_ignorance_flag
         self.time_similarity_threshold = model_config.time_similarity_threshold
 
         if encoder is None:
@@ -317,14 +318,52 @@ class MetricVAE(BaseAE):
         else:
             class_key = self.class_key
 
-        if self.time_similarity_threshold is not None:
+        if self.time_ignorance_flag:
             dt_thresh = self.time_similarity_threshold
             assert dt_thresh >= 0
 
         # calculate euclidean distances
+        # temperature = self.temperature
         dist_matrix = torch.cdist(features, features, p=2)
+        # logits = dist_matrix / temperature
 
-        # use class info to build target matrix
+        # use class key to calculate embryos that are close enough wrpt time and perturbation to count as positive
+        # examples
+        class_key_batch = pd.DataFrame(labels, columns=["snip_id"])
+        class_key_batch = class_key_batch.merge(class_key, how="left", on="snip_id")
+
+        if self.time_ignorance_flag:
+            # calculate time pairs
+            time_tensor = torch.tensor(class_key_batch["predicted_stage_hpf"].values)
+            tdist_matrix = torch.cdist(time_tensor[:, np.newaxis], time_tensor[:, np.newaxis], p=2)
+            tbool_matrix = tdist_matrix <= dt_thresh
+        else:
+            tbool_matrix = torch.zeros((dist_matrix.shape))
+
+        if self.class_ignorance_flag:
+            # calculate class pairs
+            class_tensor = torch.tensor(class_key_batch["perturbation_id"].values)
+            cbool_matrix = (class_tensor.unsqueeze(0) == class_tensor.unsqueeze(1)).float()
+        else:
+            cbool_matrix = torch.zeros((dist_matrix.shape))
+
+        # construct master target matrix
+        batch_size = int(features.shape[0] / n_views)
+
+        # EUCLIDEAN
+        batch_labels = torch.cat([torch.arange(batch_size) for i in range(n_views)], dim=0)
+        target_matrix = (batch_labels.unsqueeze(0) == batch_labels.unsqueeze(1)).float()
+        # labels = labels.to(self.device)
+
+        target_matrix = (target_matrix + (torch.multiply(cbool_matrix, tbool_matrix)) > 0).type(torch.float32)
+
+        mask = torch.eye(features.shape[0], dtype=torch.bool)  # .to(self.device)
+        target_matrix[mask == 1] = -1  # this excludes self-pairs from all calculations
+
+        # call multiclass nt_xent loss
+        loss = self.nt_xent_loss_multiclass(dist_matrix, target_matrix, repel_flag=True)
+
+        return loss
 
     def nt_xent_loss_multiclass(self, logits, target, repel_flag=False):
         # a multiclass version of the NT-Xent loss function
@@ -333,12 +372,6 @@ class MetricVAE(BaseAE):
             logit_sign = 1
 
         temperature = self.temperature
-
-        # Construct logits matrix with positive examples as firs column
-        distances_euc = torch.cat([positives_euc, negatives_euc], dim=1)
-
-        # These labels tell the cross-entropy function that the positive example for each row is in the first column (col=0)
-        labels = torch.zeros(distances_euc.shape[0], dtype=torch.long).to(self.device)
 
         # Apply temperature parameter
         logits_tempered = logit_sign * logits / temperature
