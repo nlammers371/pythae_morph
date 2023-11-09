@@ -334,7 +334,7 @@ class MetricVAE(BaseAE):
 
         if self.time_ignorance_flag:
             # calculate time pairs
-            time_tensor = torch.tensor(class_key_batch["predicted_stage_hpf"].values)
+            time_tensor = torch.tensor(class_key_batch["predicted_stage_hpf"].values).to(self.device)
             tdist_matrix = torch.cdist(time_tensor[:, np.newaxis], time_tensor[:, np.newaxis], p=2)
             tbool_matrix = tdist_matrix <= dt_thresh
         else:
@@ -342,7 +342,7 @@ class MetricVAE(BaseAE):
 
         if self.class_ignorance_flag:
             # calculate class pairs
-            class_tensor = torch.tensor(class_key_batch["perturbation_id"].values)
+            class_tensor = torch.tensor(class_key_batch["perturbation_id"].values).to(self.device)
             cbool_matrix = (class_tensor.unsqueeze(0) == class_tensor.unsqueeze(1)).float()
         else:
             cbool_matrix = torch.zeros((dist_matrix.shape))
@@ -351,7 +351,7 @@ class MetricVAE(BaseAE):
         batch_size = int(features.shape[0] / n_views)
 
         # EUCLIDEAN
-        batch_labels = torch.cat([torch.arange(batch_size) for i in range(n_views)], dim=0)
+        batch_labels = torch.cat([torch.arange(batch_size) for i in range(n_views)], dim=0).to(self.device)
         target_matrix = (batch_labels.unsqueeze(0) == batch_labels.unsqueeze(1)).float()
         # labels = labels.to(self.device)
 
