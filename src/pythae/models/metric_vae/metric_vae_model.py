@@ -157,6 +157,7 @@ class MetricVAE(BaseAE):
             recon_loss=recon_loss,
             reg_loss=kld,
             ntxent_loss=nt_xent,
+            ignorance_loss=nt_xent_nuisance,
             # orth_loss=orth_loss,
             loss=loss,
             recon_x=recon_x_out,
