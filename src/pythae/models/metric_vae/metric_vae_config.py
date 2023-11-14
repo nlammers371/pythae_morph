@@ -30,6 +30,7 @@ class MetricVAEConfig(VAEConfig):
     time_ignorance_flag: bool = False  # if true, we squeeze class info out of the nuisance partition
     time_similarity_threshold: float = 3  # specifies how close in age different observations need to be to be counted as positive pairs
     gamma: float = 1.0
+    name: str = "MetricVAE"
 
     def __init__(self, class_key_path=None, **kwargs):
         self.__dict__.update(kwargs)
