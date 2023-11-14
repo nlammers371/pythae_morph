@@ -31,12 +31,13 @@ class MetricVAEConfig(VAEConfig):
     time_similarity_threshold: float = 3  # specifies how close in age different observations need to be to be counted as positive pairs
     gamma: float = 1.0
 
-    def __init__(self, class_key_path, **kwargs):
+    def __init__(self, class_key_path=None, **kwargs):
         self.__dict__.update(kwargs)
 
         self.class_key_path = class_key_path
         self.class_key = None
-        self.load_dataset()
+        if self.class_key_path is not None:
+            self.load_dataset()
 
     def load_dataset(self):
         """

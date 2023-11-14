@@ -58,7 +58,7 @@ class MetricVAE(BaseAE):
         self.nuisance_indices = torch.arange(self.latent_dim_nuisance, dtype=torch.int)
         self.biological_indices = torch.arange(self.latent_dim_nuisance, self.latent_dim, dtype=torch.int)
 
-        self.class_key = pd.read_csv(model_config.class_key_path, index_col=0)
+        self.class_key = model_config.class_key
         self.class_ignorance_flag = model_config.class_ignorance_flag
         self.time_ignorance_flag = model_config.time_ignorance_flag
         self.time_similarity_threshold = model_config.time_similarity_threshold
