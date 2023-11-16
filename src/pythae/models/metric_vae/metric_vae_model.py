@@ -202,12 +202,12 @@ class MetricVAE(BaseAE):
             else:
                 raise Exception("Invalid distance metric was passed to model.")
         else:
-            nt_xent_loss = 0
+            nt_xent_loss = torch.tensor(0)
 
         if self.class_ignorance_flag:
             ntx_knowledge_loss = self.calculate_knowledge_loss(features=mu, labels=labels)
         else:
-            ntx_knowledge_loss = 0
+            ntx_knowledge_loss = torch.tensor(0)
 
         # orth_loss = 0
         # if weight_matrix != None:
