@@ -194,7 +194,7 @@ class AutoModel(nn.Module):
 
             model = PIWAE.load_from_folder(dir_path=dir_path)
 
-        elif model_name == "MetricVAEConfig":
+        elif "metricVAE".lower() in model_name.lower():
             from ..metric_vae import MetricVAE
 
             model = MetricVAE.load_from_folder(dir_path=dir_path)
