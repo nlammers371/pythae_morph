@@ -180,7 +180,7 @@ class AutoConfig(BaseConfig):
 
             model_config = PIWAEConfig.from_json_file(json_path)
 
-        elif config_name == "MetricVAEConfig":
+        elif "metricvae" in config_name.lower():
             from ..metric_vae import MetricVAEConfig
 
             model_config = MetricVAEConfig.from_json_file(json_path)
