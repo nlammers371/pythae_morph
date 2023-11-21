@@ -323,6 +323,8 @@ class MetricVAE(BaseAE):
             dt_thresh = self.time_similarity_threshold
             assert dt_thresh >= 0
 
+        features = features[:, self.nuisance_indices]
+
         # calculate euclidean distances
         # temperature = self.temperature
         dist_matrix = torch.cdist(features, features, p=2)
@@ -339,14 +341,14 @@ class MetricVAE(BaseAE):
             tdist_matrix = torch.cdist(time_tensor[:, np.newaxis], time_tensor[:, np.newaxis], p=2)
             tbool_matrix = tdist_matrix <= dt_thresh
         else:
-            tbool_matrix = torch.zeros((dist_matrix.shape))
+            tbool_matrix = torch.ones((dist_matrix.shape))
 
         if self.class_ignorance_flag:
             # calculate class pairs
             class_tensor = torch.tensor(class_key_batch["perturbation_id"].values).to(self.device)
             cbool_matrix = (class_tensor.unsqueeze(0) == class_tensor.unsqueeze(1)).float()
         else:
-            cbool_matrix = torch.zeros((dist_matrix.shape))
+            cbool_matrix = torch.ones((dist_matrix.shape))
 
         # construct master target matrix
         batch_size = int(features.shape[0] / n_views)
