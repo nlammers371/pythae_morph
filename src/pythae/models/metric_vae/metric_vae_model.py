@@ -353,20 +353,21 @@ class MetricVAE(BaseAE):
             cbool_matrix = torch.ones((dist_matrix.shape))
 
         # construct master target matrix
-        batch_size = int(features.shape[0] / n_views)
+        # batch_size = int(features.shape[0] / n_views)
 
         # EUCLIDEAN
-        batch_labels = torch.cat([torch.arange(batch_size) for i in range(n_views)], dim=0).to(self.device)
-        target_matrix = (batch_labels.unsqueeze(0) == batch_labels.unsqueeze(1)).float()
+        # batch_labels = torch.cat([torch.arange(batch_size) for i in range(n_views)], dim=0).to(self.device)
+        # target_matrix = (batch_labels.unsqueeze(0) == batch_labels.unsqueeze(1)).float()
         # labels = labels.to(self.device)
 
-        target_matrix = (target_matrix + (torch.multiply(cbool_matrix, tbool_matrix)) > 0).type(torch.float32)
+        target_matrix = (torch.multiply(cbool_matrix, tbool_matrix) == 0).type(torch.float32)
+        # target_matrix = (torch.multiply(cbool_matrix, tbool_matrix) > 0).type(torch.float32)
 
         mask = torch.eye(features.shape[0], dtype=torch.bool)  # .to(self.device)
         target_matrix[mask == 1] = -1  # this excludes self-pairs from all calculations
 
         # call multiclass nt_xent loss
-        loss = self.nt_xent_loss_multiclass(dist_matrix, target_matrix, repel_flag=True)
+        loss = self.nt_xent_loss_multiclass(dist_matrix, target_matrix, repel_flag=False)
 
         return loss
 
